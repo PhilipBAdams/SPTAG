@@ -133,13 +133,13 @@ namespace SPTAG
             }
             else {
                 for (int i = 0; i < m_NumSubvectors/8; i++) {
-                    __m256i m_offset = _mm256_set_epi32(0, 1 * 256 * 256, 2 * 256 * 256, 3 * 256 * 256, 4 * 256 * 256, 5 * 256 * 256, 6 * 256 * 256, 7 * 256 * 256);
+                    __m256i m_offset = _mm256_set_epi32(7 * 256 * 256, 6 * 256 * 256, 5 * 256 * 256, 4 * 256 * 256, 3 * 256 * 256, 2 * 256 * 256, 1 * 256 * 256, 0);//_mm256_set_epi32(0, 1 * 256 * 256, 2 * 256 * 256, 3 * 256 * 256, 4 * 256 * 256, 5 * 256 * 256, 6 * 256 * 256, 7 * 256 * 256);
                     __m256i m_toMul = _mm256_set1_epi32(256);
-                    __m128i loadpX = _mm_set_epi64x(*((long long*)pX + i * 8), *((long long*)pX + i * 8));
+                    __m128i loadpX = _mm_set_epi64x(*((long long*)(pX + (i * 8))), *((long long*)(pX + (i * 8))));
                     __m256i working = _mm256_cvtepu8_epi32(loadpX);
                     working = _mm256_mullo_epi32(working, m_toMul);
                     working = _mm256_add_epi32(working, m_offset);
-                    __m128i loadpY = _mm_set_epi64x(*((long long*)pY + i * 8), *((long long*)pY + i * 8));
+                    __m128i loadpY = _mm_set_epi64x(*((long long*)(pY + (i * 8))), *((long long*)(pY + (i * 8))));
                     __m256i toAdd = _mm256_cvtepu8_epi32(loadpY);
                     working = _mm256_add_epi32(working, toAdd);
                     working = _mm256_i32gather_epi32((const int*)m_L2DistanceTables.get() + (i * 8 * 256 * 256), working, 1);
@@ -147,10 +147,6 @@ namespace SPTAG
                     float arr[8];
                     _mm256_store_ps(arr, toFloat);
                     out += arr[0] + arr[1] + arr[2] + arr[3] + arr[4] + arr[5] + arr[6] + arr[7];
-                }
-                for (int i = m_NumSubvectors - (m_NumSubvectors % 8); i < m_NumSubvectors; i++)
-                {
-                    out += m_L2DistanceTables[m_DistIndexCalc(i, pX[i], pY[i])];
                 }
             }
             return out;
