@@ -85,7 +85,7 @@ namespace SPTAG
             std::unique_ptr< float[]> m_CosineDistanceTables;
             std::unique_ptr< float[]> m_L2DistanceTables;
 
-            const __m256i m_offsets = _mm256_set_epi64x(0, 256*256, 2*256*256, 3*256*256);
+            const __m256i m_offsets = _mm256_set_epi64x(3*256*256, 2*256*256, 256*256, 0);
             const __m256i m_toMul = _mm256_set1_epi64x(256);
         };
 
@@ -138,16 +138,18 @@ namespace SPTAG
                 for (int i = 0; i < m_NumSubvectors/4; i++) {
                     __m128i loadpX = _mm_set_epi64x(0, *((long long*)(pX + (i * 4))));
                     __m256i working = _mm256_cvtepu8_epi64(loadpX);
-                    working = _mm256_mul_epi32(working, m_toMul);
-                    working = _mm256_add_epi64(working, m_offsets);
                     __m128i loadpY = _mm_set_epi64x(0, *((long long*)(pY + (i * 4))));
                     __m256i toAdd = _mm256_cvtepu8_epi64(loadpY);
 
+                    working = _mm256_mul_epi32(working, m_toMul);
+                    working = _mm256_add_epi64(working, m_offsets);
+
                     working = _mm256_add_epi64(working, toAdd);
                     
-                    __m128 toFloat = _mm256_i64gather_ps(&(m_L2DistanceTables[i*4*256*256]), working, 4);
+                    __m128 toFloat = _mm256_i64gather_ps(&(m_L2DistanceTables[i * 4 * 256 * 256]), working, 4);
                     out += toFloat.m128_f32[0] + toFloat.m128_f32[1] + toFloat.m128_f32[2] + toFloat.m128_f32[3];
                 }
+                
             }
             return out;
         }
