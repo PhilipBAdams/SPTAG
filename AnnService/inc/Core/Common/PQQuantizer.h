@@ -86,6 +86,7 @@ namespace SPTAG
             std::unique_ptr< float[]> m_L2DistanceTables;
 
             const __m256i m_offsets = _mm256_set_epi64x(3*256*256, 2*256*256, 256*256, 0);
+            const __m256i m_ADCoffsets = _mm256_set_epi64x(3 * 256, 2 * 256, 256, 0);
             const __m256i m_toMul = _mm256_set1_epi64x(256);
         };
 
@@ -130,8 +131,12 @@ namespace SPTAG
         {
             float out = 0;
             if (GetEnableADC()) {               
-                for (int i = 0; i < m_NumSubvectors; i++) {
-                    out += ((float*) pX)[i * m_KsPerSubvector + (size_t) pY[i]];
+                for (int i = 0; i < m_NumSubvectors / 4; i++) {
+                    __m128i loadpY = _mm_set_epi64x(0, *((long long*)(pY + (i * 4))));
+                    __m256i toAdd = _mm256_cvtepu8_epi64(loadpY);
+                    toAdd = _mm256_add_epi64(toAdd, m_ADCoffsets);
+                    __m128 toFloat = _mm256_i64gather_ps(&((float*)pX)[i * 256 * 4], toAdd, 4);
+                    out += toFloat.m128_f32[0] + toFloat.m128_f32[1] + toFloat.m128_f32[2] + toFloat.m128_f32[3];
                 }
             }
             else {
@@ -180,7 +185,7 @@ namespace SPTAG
             if (GetEnableADC())
             {
                 auto distCalcL2 = DistanceCalcSelector<T>(DistCalcMethod::L2);
-                auto distCalcCosine = DistanceCalcSelector<T>(DistCalcMethod::L2);
+                //auto distCalcCosine = DistanceCalcSelector<T>(DistCalcMethod::L2);
                 float* ADCtable = (float*) vecout;
 
                 for (int i = 0; i < m_NumSubvectors; i++)
@@ -190,7 +195,7 @@ namespace SPTAG
                     for (int j = 0; j < m_KsPerSubvector; j++)
                     {
                         ADCtable[i * m_KsPerSubvector + j] = distCalcL2(subvec, &m_codebooks[basevecIdx + j * m_DimPerSubvector], m_DimPerSubvector);
-                        ADCtable[(m_NumSubvectors * m_KsPerSubvector) + i * m_KsPerSubvector + j] = distCalcCosine(subvec, &m_codebooks[basevecIdx + j * m_DimPerSubvector], m_DimPerSubvector);
+                        //ADCtable[(m_NumSubvectors * m_KsPerSubvector) + i * m_KsPerSubvector + j] = distCalcCosine(subvec, &m_codebooks[basevecIdx + j * m_DimPerSubvector], m_DimPerSubvector);
                     }
                 }
             }
@@ -222,7 +227,7 @@ namespace SPTAG
         {
             if (GetEnableADC())
             {
-                return sizeof(float) * m_NumSubvectors * m_KsPerSubvector * 2;
+                return sizeof(float) * m_NumSubvectors * m_KsPerSubvector; //* 2;
             }
             else
             {
