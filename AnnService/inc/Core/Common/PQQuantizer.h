@@ -18,6 +18,30 @@ namespace SPTAG
 {
     namespace COMMON
     {
+
+        struct bfloat16 {
+            unsigned short int data;
+        public:
+            bfloat16() {
+                data = 0;
+            }
+
+            bfloat16(float float_val)
+            {
+                data = (*reinterpret_cast<unsigned int*>(&float_val)) >> 16;
+            }
+            //cast to float
+            operator float() {
+                unsigned int proc = data << 16;
+                return *reinterpret_cast<float*>(&proc);
+            }
+            //cast to bfloat16
+            bfloat16& operator =(float float_val) {
+                data = (*reinterpret_cast<unsigned int*>(&float_val)) >> 16;
+                return *this;
+            }
+        };
+
         template <typename T>
         class PQQuantizer : public Quantizer
         {
@@ -80,8 +104,9 @@ namespace SPTAG
             inline SizeType m_DistIndexCalc(SizeType i, SizeType j, SizeType k);
 
             std::unique_ptr<T[]> m_codebooks;
-            std::unique_ptr<const float[]> m_CosineDistanceTables;
-            std::unique_ptr<const float[]> m_L2DistanceTables;
+            using DistanceTableType = bfloat16;
+            std::unique_ptr<const DistanceTableType[]> m_CosineDistanceTables;
+            std::unique_ptr<const DistanceTableType[]> m_L2DistanceTables;
         };
 
         template <typename T>
@@ -95,8 +120,8 @@ namespace SPTAG
             m_codebooks.reset(Codebooks);
             m_EnableADC = EnableADC;
 
-            auto temp_m_CosineDistanceTables = std::make_unique<float[]>(m_BlockSize * m_NumSubvectors);
-            auto temp_m_L2DistanceTables = std::make_unique<float[]>(m_BlockSize * m_NumSubvectors);
+            auto temp_m_CosineDistanceTables = std::make_unique<DistanceTableType[]>(m_BlockSize * m_NumSubvectors);
+            auto temp_m_L2DistanceTables = std::make_unique<DistanceTableType[]>(m_BlockSize * m_NumSubvectors);
 
             auto cosineDist = DistanceCalcSelector<T>(DistCalcMethod::Cosine);
             auto L2Dist = DistanceCalcSelector<T>(DistCalcMethod::L2);
@@ -105,8 +130,8 @@ namespace SPTAG
                 SizeType baseIdx = i * m_KsPerSubvector * m_DimPerSubvector;
                 for (int j = 0; j < m_KsPerSubvector; j++) {
                     for (int k = 0; k < m_KsPerSubvector; k++) {
-                        temp_m_CosineDistanceTables[m_DistIndexCalc(i, j, k)] = DistanceUtils::ConvertDistanceBackToCosineSimilarity(cosineDist(&m_codebooks[baseIdx + j * m_DimPerSubvector], &m_codebooks[baseIdx + k * m_DimPerSubvector], m_DimPerSubvector));
-                        temp_m_L2DistanceTables[m_DistIndexCalc(i, j, k)] = L2Dist(&m_codebooks[baseIdx + j * m_DimPerSubvector], &m_codebooks[baseIdx + k * m_DimPerSubvector], m_DimPerSubvector);
+                        temp_m_CosineDistanceTables[m_DistIndexCalc(i, j, k)] = (DistanceTableType) DistanceUtils::ConvertDistanceBackToCosineSimilarity(cosineDist(&m_codebooks[baseIdx + j * m_DimPerSubvector], &m_codebooks[baseIdx + k * m_DimPerSubvector], m_DimPerSubvector));
+                        temp_m_L2DistanceTables[m_DistIndexCalc(i, j, k)] = (DistanceTableType) L2Dist(&m_codebooks[baseIdx + j * m_DimPerSubvector], &m_codebooks[baseIdx + k * m_DimPerSubvector], m_DimPerSubvector);
                     }
                 }
             }
@@ -126,12 +151,12 @@ namespace SPTAG
             float out = 0;
             if (GetEnableADC()) {               
                 for (int i = 0; i < m_NumSubvectors; i++) {
-                    out += ((float*) pX)[i * m_KsPerSubvector + (size_t) pY[i]];
+                    out += ((DistanceTableType*) pX)[i * m_KsPerSubvector + (size_t) pY[i]];
                 }
             }
             else {
                 for (int i = 0; i < m_NumSubvectors; i++) {
-                    out += m_L2DistanceTables[m_DistIndexCalc(i, pX[i], pY[i])];
+                    out += ((DistanceTableType)m_L2DistanceTables[m_DistIndexCalc(i, pX[i], pY[i])]).operator float();
                 }                
             }
             return out;
@@ -145,13 +170,13 @@ namespace SPTAG
             if (GetEnableADC())
             {
                 for (int i = 0; i < m_NumSubvectors; i++) {
-                    out += ((float*)pX)[(m_NumSubvectors * m_KsPerSubvector) + (i * m_KsPerSubvector) + (size_t) pY[i]];
+                    out += ((DistanceTableType*)pX)[(m_NumSubvectors * m_KsPerSubvector) + (i * m_KsPerSubvector) + (size_t) pY[i]];
                 }
             }
             else
             {
                 for (int i = 0; i < m_NumSubvectors; i++) {
-                    out += m_CosineDistanceTables[m_DistIndexCalc(i, pX[i], pY[i])];
+                    out += ((DistanceTableType)m_CosineDistanceTables[m_DistIndexCalc(i, pX[i], pY[i])]).operator float();
                 }
             }
             return DistanceUtils::ConvertCosineSimilarityToDistance(out);
@@ -164,7 +189,7 @@ namespace SPTAG
             {
                 auto distCalcL2 = DistanceCalcSelector<T>(DistCalcMethod::L2);
                 auto distCalcCosine = DistanceCalcSelector<T>(DistCalcMethod::L2);
-                float* ADCtable = (float*) vecout;
+                DistanceTableType* ADCtable = (DistanceTableType*) vecout;
 
                 for (int i = 0; i < m_NumSubvectors; i++)
                 {
@@ -172,8 +197,8 @@ namespace SPTAG
                     SizeType basevecIdx = i * m_KsPerSubvector * m_DimPerSubvector;
                     for (int j = 0; j < m_KsPerSubvector; j++)
                     {
-                        ADCtable[i * m_KsPerSubvector + j] = distCalcL2(subvec, &m_codebooks[basevecIdx + j * m_DimPerSubvector], m_DimPerSubvector);
-                        ADCtable[(m_NumSubvectors * m_KsPerSubvector) + i * m_KsPerSubvector + j] = distCalcCosine(subvec, &m_codebooks[basevecIdx + j * m_DimPerSubvector], m_DimPerSubvector);
+                        ADCtable[i * m_KsPerSubvector + j] = (DistanceTableType) distCalcL2(subvec, &m_codebooks[basevecIdx + j * m_DimPerSubvector], m_DimPerSubvector);
+                        ADCtable[(m_NumSubvectors * m_KsPerSubvector) + i * m_KsPerSubvector + j] = (DistanceTableType) distCalcCosine(subvec, &m_codebooks[basevecIdx + j * m_DimPerSubvector], m_DimPerSubvector);
                     }
                 }
             }
@@ -205,7 +230,7 @@ namespace SPTAG
         {
             if (GetEnableADC())
             {
-                return sizeof(float) * m_NumSubvectors * m_KsPerSubvector * 2;
+                return sizeof(DistanceTableType) * m_NumSubvectors * m_KsPerSubvector * 2;
             }
             else
             {
@@ -270,8 +295,8 @@ namespace SPTAG
             LOG(Helper::LogLevel::LL_Info, "After read codebooks.\n");
 
             m_BlockSize = m_KsPerSubvector * m_KsPerSubvector;
-            auto temp_m_CosineDistanceTables = std::make_unique<float[]>(m_BlockSize * m_NumSubvectors);
-            auto temp_m_L2DistanceTables = std::make_unique<float[]>(m_BlockSize * m_NumSubvectors);
+            auto temp_m_CosineDistanceTables = std::make_unique<DistanceTableType[]>(m_BlockSize * m_NumSubvectors);
+            auto temp_m_L2DistanceTables = std::make_unique<DistanceTableType[]>(m_BlockSize * m_NumSubvectors);
 
             auto cosineDist = DistanceCalcSelector<T>(DistCalcMethod::Cosine);
             auto L2Dist = DistanceCalcSelector<T>(DistCalcMethod::L2);
