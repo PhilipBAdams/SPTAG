@@ -296,7 +296,8 @@ namespace SPTAG {
                 int p_numThreads,
                 std::vector<COMMON::QueryResultSet<ValueType>>& p_results,
                 std::vector<SearchStats>& p_stats,
-                int p_maxQueryCount)
+                int p_maxQueryCount,
+                std::vector<CentroidsLogger>& cls)
             {
                 int numQueries = min(static_cast<int>(p_results.size()), p_maxQueryCount);
                 
@@ -307,7 +308,6 @@ namespace SPTAG {
                 LOG(Helper::LogLevel::LL_Info, "Searching: numThread: %d, numQueries: %d.\n", p_numThreads, numQueries);
                 
                 TimeUtils::StopW sw;
-
                 auto func = [&]()
                 {
                     size_t index = 0;
@@ -320,7 +320,8 @@ namespace SPTAG {
                             {
                                 LOG(Helper::LogLevel::LL_Info, "Sent %.2lf%%...\n", index * 100.0 / numQueries);
                             }
-                            p_searcher.Search(p_results[index], p_stats[index]);
+
+                            p_searcher.Search(p_results[index], p_stats[index], cls[index]);
                         }
                         else
                         {
@@ -328,9 +329,12 @@ namespace SPTAG {
                         }
                     }
                 };
+                
+
 
                 for (int i = 0; i < p_numThreads; i++) { threads.emplace_back(func); }
                 for (auto& thread : threads) { thread.join(); }
+                SaveCentroidsLogger(cls);
 
                 double sendingCost = sw.getElapsedSec();
 
@@ -339,6 +343,34 @@ namespace SPTAG {
                     sendingCost,
                     numQueries / sendingCost,
                     static_cast<uint32_t>(numQueries));
+            }
+
+            ErrorCode SaveCentroidsLogger(std::vector<CentroidsLogger> cls)
+            {
+                auto p_out = SPTAG::f_createIO();
+                if (p_out == nullptr || !p_out->Initialize("centroidslog.bin", std::ios::binary | std::ios::out)) return ErrorCode::FailedCreateFile;
+                auto clssize = cls.size();
+                IOBINARY(p_out, WriteBinary, sizeof(SizeType), (char*)&clssize);
+                for (int i = 0; i < cls.size(); i++)
+                {
+                    auto cl = cls[i];
+                    auto clsize = cl.size();
+                    IOBINARY(p_out, WriteBinary, sizeof(SizeType), (char*)&clsize);
+                    for (int j = 0; j < cl.size(); j++)
+                    {
+                        auto c = cl[j];
+                        auto pl = std::get<2>(c);
+                        IOBINARY(p_out, WriteBinary, sizeof(SizeType), (char*)&std::get<0>(c));
+                        IOBINARY(p_out, WriteBinary, sizeof(SizeType), (char*)&std::get<1>(c));
+                        auto plsize = pl.size();
+                        IOBINARY(p_out, WriteBinary, sizeof(SizeType), (char*)&plsize);
+                        for (int k = 0; k < pl.size(); k++)
+                        {
+                            IOBINARY(p_out, WriteBinary, sizeof(SizeType), (char*)&pl[k]);
+                        }
+                    }
+                    
+                }
             }
 
 
@@ -472,6 +504,7 @@ namespace SPTAG {
 
                     std::vector<COMMON::QueryResultSet<ValueType>> warmupResults(warmupNumQueries, COMMON::QueryResultSet<ValueType>(NULL, internalResultNum));
                     std::vector<SearchStats> warmpUpStats(warmupNumQueries);
+                    std::vector<CentroidsLogger> warmupcl(warmupNumQueries);
                     for (int i = 0; i < warmupNumQueries; ++i)
                     {
                         warmupResults[i].SetTarget(reinterpret_cast<ValueType*>(warmupQuerySet->GetVector(i)));
@@ -481,7 +514,7 @@ namespace SPTAG {
                     LOG(Helper::LogLevel::LL_Info, "Start warmup...\n");
                     if (asyncCallQPS == 0)
                     {
-                        SearchSequential(searcher, numThreads, warmupResults, warmpUpStats, p_opts.m_queryCountLimit);
+                        SearchSequential(searcher, numThreads, warmupResults, warmpUpStats, p_opts.m_queryCountLimit, warmupcl);
                     }
                     else
                     {
@@ -504,6 +537,7 @@ namespace SPTAG {
 
                 std::vector<COMMON::QueryResultSet<ValueType>> results(numQueries, COMMON::QueryResultSet<ValueType>(NULL, internalResultNum));
                 std::vector<SearchStats> stats(numQueries);
+                std::vector<CentroidsLogger> centroidsloggers(numQueries);
                 for (int i = 0; i < numQueries; ++i)
                 {
                     results[i].SetTarget(reinterpret_cast<ValueType*>(querySet->GetVector(i)));
@@ -515,7 +549,7 @@ namespace SPTAG {
 
                 if (asyncCallQPS == 0)
                 {
-                    SearchSequential(searcher, numThreads, results, stats, p_opts.m_queryCountLimit);
+                    SearchSequential(searcher, numThreads, results, stats, p_opts.m_queryCountLimit, centroidsloggers);
                 }
                 else
                 {

@@ -62,6 +62,8 @@ namespace SPTAG {
 
                 int m_threadID;
             };
+
+            using CentroidsLogger = std::vector<std::tuple<SPTAG::SizeType, SPTAG::SizeType, std::vector<SPTAG::SizeType>>>;
         }
     }
 }

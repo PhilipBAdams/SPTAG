@@ -53,7 +53,8 @@ namespace SPTAG {
                 virtual void Search(ExtraWorkSpace* p_exWorkSpace,
                     COMMON::QueryResultSet<ValueType>& p_queryResults,
                     std::shared_ptr<VectorIndex> p_index,
-                    SearchStats& p_stats)
+                    SearchStats& p_stats,
+                    CentroidsLogger& p_centroidsLogger)
                 {
                     const uint32_t postingListCount = static_cast<uint32_t>(p_exWorkSpace->m_postingIDs.size());
 
@@ -103,6 +104,7 @@ namespace SPTAG {
                         };
                         request.m_success = false;
                         request.m_pListInfo = (void*)listInfo;
+                        request.pi = pi;
 
                         if (!((indexContext->m_indexFile)->ReadFileAsync(request)))
                         {
@@ -121,7 +123,7 @@ namespace SPTAG {
                             char* vectorInfo = buffer + listInfo->pageOffset + i * m_vectorInfoSize;
                             int vectorID = *(reinterpret_cast<int*>(vectorInfo));
                             vectorInfo += sizeof(int);
-
+                            std::get<2>(p_centroidsLogger[pi]).push_back(vectorID);
                             if (p_exWorkSpace->m_deduper.CheckAndSet(vectorID)) continue;
 
                             auto distance2leaf = p_index->ComputeDistance(p_queryResults.GetQuantizedTarget(), vectorInfo);
@@ -140,6 +142,7 @@ namespace SPTAG {
 
                         if (request->m_success)
                         {
+                            auto pi = request->pi;
                             ListInfo* listInfo = (ListInfo*)(request->m_pListInfo);
                             char* buffer = request->m_buffer;
 
@@ -148,7 +151,7 @@ namespace SPTAG {
                                 char* vectorInfo = buffer + listInfo->pageOffset + i * m_vectorInfoSize;
                                 int vectorID = *(reinterpret_cast<int*>(vectorInfo));
                                 vectorInfo += sizeof(int);
-
+                                std::get<2>(p_centroidsLogger[pi]).push_back(vectorID);
                                 if (p_exWorkSpace->m_deduper.CheckAndSet(vectorID)) continue;
 
                                 auto distance2leaf = p_index->ComputeDistance(p_queryResults.GetQuantizedTarget(), vectorInfo);

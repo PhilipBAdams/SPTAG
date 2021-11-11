@@ -58,6 +58,7 @@ namespace SPTAG {
             struct DiskListRequest : public SPTAG::Helper::AsyncReadRequest
             {
                 void* m_pListInfo;
+                SizeType pi;
             };
             
             struct ExtraWorkSpace
@@ -96,7 +97,8 @@ namespace SPTAG {
                 virtual void Search(ExtraWorkSpace* p_exWorkSpace,
                     COMMON::QueryResultSet<ValueType>& p_queryResults,
                     std::shared_ptr<VectorIndex> p_index,
-                    SearchStats& p_stats) = 0;
+                    SearchStats& p_stats,
+                    CentroidsLogger& p_centroidsLogger) = 0;
             };
         }
     }

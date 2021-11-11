@@ -171,7 +171,7 @@ namespace SPTAG {
 					}
 				}
 
-				void Search(COMMON::QueryResultSet<ValueType>& p_queryResults, SearchStats& p_stats)
+				void Search(COMMON::QueryResultSet<ValueType>& p_queryResults, SearchStats& p_stats, CentroidsLogger& p_centroidsLogger)
 				{
 					//LARGE_INTEGER qpcStartTime;
 					//LARGE_INTEGER qpcEndTime;
@@ -205,9 +205,15 @@ namespace SPTAG {
 							if (res->VID == -1) break;
 							res->VID = static_cast<int>(m_vectorTranslateMap[res->VID]);
 						}
+						for (int i = 0; i < p_queryResults.GetResultNum(); ++i)
+						{
+							auto res = p_queryResults.GetResult(i);
+							std::vector<SPTAG::SizeType> v;
+							p_centroidsLogger.push_back(std::make_tuple(auto_ws->m_postingIDs[i], res->VID, v));
+						}
 
 						p_queryResults.Reverse();
-						m_extraSearcher->Search(auto_ws, p_queryResults, m_index, p_stats);
+						m_extraSearcher->Search(auto_ws, p_queryResults, m_index, p_stats, p_centroidsLogger);
 						RetWs(auto_ws);
 					}
 
@@ -331,8 +337,8 @@ namespace SPTAG {
 
 					static thread_local std::chrono::steady_clock::time_point m_lastQuit = startPoint;
 					p_stats.m_sleepLatency = TimeUtils::getMsInterval(m_lastQuit, startPoint);
-
-					Search(p_queryResults, p_stats);
+					CentroidsLogger cl;
+					Search(p_queryResults, p_stats, cl);
 
 					p_stats.m_totalLatency = TimeUtils::getMsInterval(p_stats.m_searchRequestTime, std::chrono::steady_clock::now());
 
