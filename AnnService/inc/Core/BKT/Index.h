@@ -121,7 +121,24 @@ namespace SPTAG
             }
             inline float ComputeDistance(const void* pX, const void* pY) const { return m_fComputeDistance((const T*)pX, (const T*)pY, m_pSamples.C()); }
             inline const void* GetSample(const SizeType idx) const { return (void*)m_pSamples[idx]; }
-            inline bool ContainSample(const SizeType idx) const { return idx < m_pSamples.R() && !m_deletedID.Contains(idx); }
+            inline bool ContainSample(const SizeType idx) const 
+            { 
+                if (idx < m_pSamples.R())
+                {
+                    try
+                    {
+                        return !m_deletedID.Contains(idx);
+                    }
+                    catch (const std::exception& e)
+                    {
+                        LOG(Helper::LogLevel::LL_Error, "Issue getting deleted id for index: %d. Samples size: %d. DeletedIDs buffer size: %d.\n", idx, m_pSamples.R(), m_deletedID.BufferSize());
+                        throw;
+                    }
+                }
+                else {
+                    return false;
+                }
+            }
             inline bool NeedRefine() const { return m_deletedID.Count() > (size_t)(GetNumSamples() * m_fDeletePercentageForRefine); }
             std::shared_ptr<std::vector<std::uint64_t>> BufferSize() const
             {
